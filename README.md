@@ -1,14 +1,58 @@
-# Constraint-Driven ML Research Skills
+# Constraint-Driven ML Research Skills Library
 
-A modular skill library for conducting rigorous, reproducible machine learning research under real deployment constraints. Based on the YOLOv11/OpenVINO face detection methodology: measuring everything, not estimating anything.
+A modular skill library for conducting rigorous, reproducible machine learning research under real deployment constraints. Based on the YOLOv11/OpenVINO face detection methodology.
 
-## Philosophy
+## 📚 Project Structure
+
+```
+skills-repo/
+├── README.md                 # This file
+├── USAGE.md                  # How agents should use these skills
+├── setup.py                  # Package installation
+│
+├── Skills/                   # Core research skills
+│   ├── experimental-design/  # Define constraints & benchmark harnesses
+│   │   ├── constraints/      # Hardware constraint definitions
+│   │   └── benchmarking/     # Reproducible benchmark scripts
+│   │
+│   ├── data-profiling/       # Profile data before architecture changes
+│   │   └── analysis/         # Distribution profiling tools
+│   │
+│   ├── weight-transfer/      # Track pretrained parameter inheritance
+│   │   └── accounting/       # Weight transfer measurement
+│   │
+│   ├── conversion-analysis/  # Separate export losses by stage
+│   │   └── boundary/         # Conversion vs quantisation tracing
+│   │
+│   ├── metrics-pipeline/     # Reproducible metrics storage
+│   │   └── generation/       # JSON → Markdown generation
+│   │
+│   ├── environment-testing/  # Prove benchmark integrity
+│   │   └── validation/       # Negative control tests
+│   │
+│   └── limitations/          # Honest limitation documentation
+│       └── documentation/    # Auto-generate limitations sections
+│
+├── Plugins/                  # Framework-specific implementations
+│   └── frameworks/
+│       ├── pytorch/          # PyTorch/TorchScript plugins
+│       ├── tensorflow/       # TensorFlow/TFLite plugins
+│       └── onnx/             # ONNX Runtime plugins
+│
+└── Tools/                    # Utilities and generators
+    ├── utils/                # Common utilities
+    ├── generators/           # Code/report generators
+    └── parsers/              # Config/result file readers
+```
+
+## 🔥 Core Philosophy
 
 **Every line answers:** "Would an agent/researcher miss this without help?"
 
-If the answer is no, don't include it. If yes, make it actionable.
+If yes → Include it as actionable guidance.  
+If no → Leave it out (it's obvious).
 
-## Core Principles
+### Key Principles
 
 1. **Measure under actual constraints** — Don't benchmark on your laptop; benchmark in the same cgroup/memory limits as production
 2. **Trace where losses happen** — Separate export loss from quantisation loss from architecture changes
@@ -16,171 +60,83 @@ If the answer is no, don't include it. If yes, make it actionable.
 4. **Negative controls prove environment integrity** — Test that sandboxing actually works
 5. **Generate metrics from code, not manually** — JSON source files + regeneration scripts = no hand-typed numbers
 
-## Available Skills
+## 🛠️ Available Skills
 
-### `experimental-design`
-Define hard constraints before training begins (CPU cores, RAM, latency budget, accuracy target). Create reproducible benchmark harness that enforces them with cgroups/taskset or equivalent containerization.
+| Category | Skill | When to Use |
+|---|---|---|
+| `experimental-design` | Define hard constraints before training | Any edge/deployment-constrained project |
+| `data-profiling` | Profile data before modifications | Before removing heads/components |
+| `weight-transfer` | Track pretrained parameter inheritance | Modifying architectures with <10k samples |
+| `conversion-analysis` | Trace accuracy losses by stage | Any model export workflow |
+| `metrics-pipeline` | Store metrics as JSON source | All experimental reporting |
+| `environment-testing` | Prove benchmarks aren't lying | Publishing performance claims |
+| `limitations` | Document structural constraints | Before presenting/publishing results |
 
-**When to use:** Any edge/deployment-constrained ML project
+## 💡 Example Workflow
 
-**Input requirements:**
-- Hardware spec (CPU cores, RAM limit, accelerator availability)
-- Accuracy metric and gate (e.g., mAP@0.5 ≥ 0.95)
-- Performance target (FPS, latency p95, memory peak)
+```python
+# 1. Design experiment under constraints
+from Skills.experimental_design.constraints import define_constraints
 
-**Output artifacts:**
-- Benchmark script that prints observed constraints (affinity masks, memory limits)
-- Negative control tests proving sandbox isn't leaky
-- Requirements file with exact versions used
+constraints = define_constraints(
+    cpu_cores=2, memory_mb=2048,
+    accuracy_target={"mAP@0.5": 0.95}
+)
 
----
+# 2. Profile data before modifying architecture
+from Skills.data_profiling.analysis import profile_box_sizes
 
-### `data-profiling-before-modification`
-Profile data properties *before* making any architectural decisions. For object detection: measure box scale distributions per detection head's receptive band. For time series: measure frequency content, seasonality, missingness patterns.
+box_profile = profile_box_sizes("data/train/")
 
-**When to use:** Before removing heads, changing stride, modifying preprocessing
+# 3. Check weight transfer after modifications
+from Skills.weight_transfer.accounting import check_weight_transfer
 
-**Key question answered:** "Is dropping P5 head justified by data, or just dogma?"
+transfer = check_weight_transfer("model_v1.yaml", "coco.pt")
+print(f"{transfer['transfer_rate_percent']}% weights transferred")
 
-**Output artifacts:**
-- Distribution plots saved to `docs/`
-- Quantitative table of which heads/components are actually needed
-- Decision rationale linking data properties to architecture choices
+# 4. Analyze conversion pipeline
+from Skills.conversion_analysis.boundary import analyze_conversion_pipeline
 
----
+results = analyze_conversion_pipeline("trained_model", "test_data/")
 
-### `weight-transfer-accounting`
-When modifying architectures (width scaling, block removal, layer addition), track how many pretrained tensors transfer vs get reinitialised. This catches cases where parameter count optimization hurts more than it helps.
+# 5. Save metrics reproducibly
+from Skills.metrics_pipeline.generation import save_accuracy_results
 
-**When to use:** Any fine-tuning scenario with <10k unique training samples, width/architecture modifications
+save_accuracy_results(results)
 
-**Measurement method:** Intersection of new model's state_dict keys/shapes against pretrained checkpoint
+# 6. Verify benchmark environment
+from Skills.environment_testing.validation import test_thread_oversubscription
 
-**Output artifacts:**
-- Transfer rate table (% tensors inherited vs total params)
-- Warning if transfer drops below threshold (~80% recommended for small datasets)
-- Recommendations for keeping architecture close to stock when weights matter
+negative_control = test_thread_oversubscription(...)
 
----
+# 7. Generate honest limitations
+from Skills.limitations.documentation import suggest_limitations_from_experiment
 
-### `conversion-boundary-analysis`
-Separate accuracy/speed losses by stage: PyTorch→ONNX/TFLite/INT8. Often the conversion itself costs more than quantisation.
-
-**When to use:** Any model export workflow
-
-**Standard measurement sequence:**
-1. FP32 native (baseline)
-2. Exported FP32/FP16 (conversion loss)
-3. Quantised INT8 (quantisation impact)
-
-**Output artifacts:**
-- Accuracy delta table showing each stage's contribution
-- Speedup factor per precision level
-- Recommendation on whether quantisation worth the pipeline complexity
-
----
-
-### `reproducible-metrics-pipeline`
-Store all measurements as JSON source files. Generate README/table documents programmatically from these sources. Never hand-edit result tables.
-
-**When to use:** All experimental reporting
-
-**Structure:**
-```
-results/
-├── accuracy.json        # variant × format × split metrics
-├── benchmarks.json      # latency/RSS/CPU% per configuration
-├── architecture.json    # params/GFLOPs/transfer rates
-└── dataset_stats.json   # box/image distributions, augmentation stats
+limitations = suggest_limitations_from_experiment(experiment_metadata)
 ```
 
-**Generation script:** Regenerates every table in documentation from JSON
+See [USAGE.md](USAGE.md) for detailed agent workflows.
 
-**Output artifacts:**
-- Source-of-truth JSON files
-- Markdown report regenerated from code
-- Diff-friendly numeric records (can see what changed between runs)
+## 🎯 From Real Research
 
----
+This methodology comes from our [YOLOv11 face detection project](https://github.com/rubythalib-ai/face-detection-openvino-edge):
 
-### `environmental-validity-testing`
-Test that benchmark claims match reality. Run oversubscription tests (more threads than CPU cores available) to prove cgroup/cpuset enforcement works. Verify memory limits trigger OOM kills when exceeded.
+- **Architecture decisions driven by data profiles**, not heuristics
+- **Weight transfer accounting reveals hidden costs** of parameter reduction
+- **Conversion loss often exceeds quantisation loss**
+- **Negative controls prove benchmark integrity**
+- **Reproducible metrics from code, not manual editing**
 
-**When to use:** Publishing performance claims, deploying to constrained hardware
+## 🌍 Framework Agnostic
 
-**Negative control examples:**
-- Requesting 8 threads inside 2-CPU cgroup → should show no speedup (oversubscription penalty)
-- Allocating >MemoryMax → should OOM kill or cap at limit
-- Accessing third CPU → should be throttled/killed
+All skills work across frameworks:
+- ✅ PyTorch (Ultralytics, custom models)
+- ✅ TensorFlow/Keras
+- ✅ ONNX Runtime
+- ✅ JAX (via conversion plugins)
 
-**Output artifacts:**
-- Evidence rows in benchmark tables proving isolation
-- Printouts of observed constraints (every benchmark outputs affinity mask, memory limits)
-- Documentation of any limitations in enforcement (WSL2 quirks, kernel versions)
+The tooling changes but the methodology stays identical.
 
----
+## 📖 License
 
-### `statistical-uncertainty-reporting`
-For small test sets, quantify noise floor and confidence intervals. Report when differences are statistically indistinguishable. Don't claim wins within noise.
-
-**When to use:** Any evaluation with <1k test samples, especially classification/detection metrics
-
-**Calculation methods:**
-- Bootstrap confidence intervals for mAP/F1/Accuracy
-- Effect size estimates for metric deltas
-- Minimum meaningful difference given sample size
-
-**Output artifacts:**
-- Uncertainty annotations on result tables (⚠️ vs ✅ gates)
-- Text explaining statistical indistinguishability ("0.9494 vs 0.950 not distinguishable")
-- Sample size justification or limitation statements
-
----
-
-### `limitation-documentation`
-Explicitly document structural constraints bounding generalisability. Distinguish between:
-- **Limitations:** Cannot fix even with infinite compute/data (small test set, single-source domain)
-- **Incomplete searches:** Could fix but didn't due to practical constraints (untrained variants)
-- **Results:** What you found, good or bad (target missed by X points)
-
-**Output artifacts:**
-- Dedicated limitations section in documentation
-- Clear labels on incomplete experiments
-- Honest failure reporting (missed targets, null results)
-
----
-
-## How to Use These Skills
-
-### For Agents Working in New Repos
-
-1. **Read highest-value sources first:** README, Makefile/package config, lockfiles, CI workflows
-2. **Identify constraint pattern:** Is this edge deployment? Small dataset? Export pipeline?
-3. **Apply relevant skills:** Use `weight-transfer-accounting` if modifying architectures, use `conversion-boundary-analysis` if exporting
-4. **Generate artifacts:** Create JSON metrics, profile plots, limitation docs
-5. **Verify environment:** Run negative controls before publishing claims
-
-### Customizing for Your Framework
-
-All skills work across frameworks. Only the tooling changes:
-
-| Skill | PyTorch | TensorFlow | ONNX Runtime | JAX |
-|---|---|---|---|---|
-| Weight transfer | `state_dict()` overlap | `model.get_weights()` comparison | Same via TorchScript intermediate | NumPy array key matching |
-| Export tracing | torch.onnx/export | tf.lite.TFLiteConverter | onnxruntime.InferenceSession | jax.jit + xla.compile |
-| Quantisation | NNCF, bitsandbytes | TFLite converter | ONNX Runtime quantisation | flax.linen.quantize |
-| Constraint harness | cgroups+taskset | Container run flags | Docker compose limits | Kubernetes resource specs |
-
----
-
-## Credits
-
-Based on methodology from: [face-detection-openvino-edge](https://github.com/rubythalib-ai/face-detection-openvino-edge)
-
-Core insights:
-- Architecture decisions driven by data profiles, not heuristics
-- Weight transfer accounting reveals hidden costs of parameter reduction
-- Conversion loss often exceeds quantisation loss
-- Negative controls prove benchmark integrity
-- Reproducible metrics from code, not manual editing
-# skills
+MIT — same as the parent project.
