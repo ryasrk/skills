@@ -183,3 +183,4 @@ Core insights:
 - Conversion loss often exceeds quantisation loss
 - Negative controls prove benchmark integrity
 - Reproducible metrics from code, not manual editing
+# skills
